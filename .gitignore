@@ -32,6 +32,9 @@
 !/safe_bridge.py
 !/odom_tf_bridge.py
 !/log_nav_topics.py
+!/evaluation_logger.py
+!/navigate_then_spin.py
+!/velocity_sweep_test.py
 !/nav2_param_learn.yaml
 !/CLAUDE.md
 !/.gitignore
