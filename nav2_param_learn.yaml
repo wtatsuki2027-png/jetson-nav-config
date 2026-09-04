@@ -1,0 +1,482 @@
+# ============================================================================
+# nav2_param_learn.yaml
+#
+# ~/ros2_ws/src/my_robot_nav/config/nav2_params.yaml の学習用・解説付きコピー。
+# 実際にロボットを動かすときはオリジナルの方(my_robot_nav/config/)を使うこと。
+# こちらはコメントで各項目の役割を解説するための「読む専用」のファイル。
+#
+# 全体構成の考え方:
+#   Nav2は「1つの巨大な設定」ではなく、複数の独立したROS2ノード(◯◯_server)が
+#   それぞれ自分の ros__parameters ブロックを読む、という構造になっている。
+#   このYAMLファイルは、それら全ノードの設定を1ファイルにまとめたもの。
+#   トップレベルのキー(amcl:, bt_navigator:, controller_server: ...)が、
+#   それぞれ1つのノード名に対応している。
+# ============================================================================
+
+
+# ----------------------------------------------------------------------------
+# amcl: 適応モンテカルロ・ローカリゼーション
+# ----------------------------------------------------------------------------
+# 役割: 事前に作った地図(static map)に対して、パーティクルフィルタでロボットの
+#       現在位置を「再推定・補正」し続けるノード。
+#
+# ★このプロジェクトでは起動していない(未使用)★
+#   bringup_launch.py が nav2_bringup の navigation_launch.py を呼んでいるが、
+#   AMCLは意図的に含めていない。理由: このロボットは GLIM(LiDAR-IMUのSLAM)が
+#   常に map→odom→imu のTFを配信しており、姿勢推定はGLIM側が担っているため。
+#   AMCLがないので「地図に対する再ローカリゼーション」は一切行われない。
+#   → マッピング時と全く同じGLIMセッションのまま航行する必要がある。
+#      GLIMを再起動すると原点がリセットされ、地図とのズレが無音で発生する。
+amcl:
+  ros__parameters:
+    use_sim_time: False  # 実機固有(未使用: このプロジェクトはAMCLを起動しない)
+    alpha1: 0.2   # オドメトリの回転→回転誤差モデルの係数(パーティクルのばらけ方)
+    alpha2: 0.2   # オドメトリの並進→回転誤差モデルの係数
+    alpha3: 0.2   # オドメトリの並進→並進誤差モデルの係数
+    alpha4: 0.2   # オドメトリの回転→並進誤差モデルの係数
+    alpha5: 0.2   # (全方向モデル用)
+    base_frame_id: "imu"  # 実機固有(通常はbase_link。このロボットはIMUフレームを基準にしている)
+    beam_skip_distance: 0.5
+    beam_skip_error_threshold: 0.9
+    beam_skip_threshold: 0.3
+    do_beamskip: false
+    global_frame_id: "map"
+    lambda_short: 0.1
+    laser_likelihood_max_dist: 2.0
+    laser_max_range: 100.0
+    laser_min_range: -1.0
+    laser_model_type: "likelihood_field"  # レーザー観測モデルの種類
+    max_beams: 60         # 1スキャンから使うビーム数の上限(多いほど精度↑・計算コスト↑)
+    max_particles: 2000   # パーティクル(仮説姿勢)の最大数
+    min_particles: 500
+    odom_frame_id: "odom"
+    pf_err: 0.05
+    pf_z: 0.99
+    recovery_alpha_fast: 0.0
+    recovery_alpha_slow: 0.0
+    resample_interval: 1
+    robot_model_type: "nav2_amcl::DifferentialMotionModel"  # 差動駆動モデル
+    save_pose_rate: 0.5
+    sigma_hit: 0.2
+    tf_broadcast: true
+    transform_tolerance: 1.0
+    update_min_a: 0.2     # この角度以上動かないと再推定を走らせない(rad)
+    update_min_d: 0.25    # この距離以上動かないと再推定を走らせない(m)
+    z_hit: 0.5
+    z_max: 0.05
+    z_rand: 0.5
+    z_short: 0.05
+    scan_topic: /livox/lidar  # 実機固有(Livox MID360)
+
+
+# ----------------------------------------------------------------------------
+# bt_navigator: ナビゲーション全体の「司令塔」
+# ----------------------------------------------------------------------------
+# 役割: /goal_pose (2D Goal Pose) を受け取ると、Behavior Tree(BT)という
+#       フローチャートに従って、大域計画(planner_server)と局所制御
+#       (controller_server)を繰り返し呼び出し、進捗が止まればリカバリー行動
+#       (behavior_server)を発動する。ナビゲーション全体の「進行管理」を担う。
+#
+# 使っているBTは既定のもの(下記コメント参照)で、このファイルでは上書きして
+# いない。既定のBTは「1Hzで経路を再計画し続ける + 進捗チェック失敗でリカバリー」
+# という構成になっている。
+bt_navigator:
+  ros__parameters:
+    use_sim_time: False  # 実機固有
+    global_frame: map
+    robot_base_frame: imu  # 実機固有
+    odom_topic: /odom     # ← odom_tf_bridge.py が配信しているトピック
+    bt_loop_duration: 10   # BTを何ms周期でtickするか
+    default_server_timeout: 20
+    wait_for_service_timeout: 1000
+    # default_nav_to_pose_bt_xml が未指定の場合、Nav2は以下を既定として使う:
+    #   nav2_bt_navigator/navigate_to_pose_w_replanning_and_recovery.xml
+    # 中身のおおまかな構成:
+    #   RateController(1Hz) { ComputePathToPose → FollowPath }
+    #   を、進捗チェック失敗やエラー時にリカバリー(costmapクリア等)を挟みながら
+    #   繰り返す、という構成になっている。
+    plugin_lib_names:
+      # BTの各ノード(アクション/条件)を実装したプラグイン名の一覧。
+      # 増減させることはほぼなく、公式デフォルトのリストをそのまま使う。
+      - nav2_compute_path_to_pose_action_bt_node
+      - nav2_compute_path_through_poses_action_bt_node
+      - nav2_smooth_path_action_bt_node
+      - nav2_follow_path_action_bt_node
+      - nav2_spin_action_bt_node
+      - nav2_wait_action_bt_node
+      - nav2_assisted_teleop_action_bt_node
+      - nav2_back_up_action_bt_node
+      - nav2_drive_on_heading_bt_node
+      - nav2_clear_costmap_service_bt_node
+      - nav2_is_stuck_condition_bt_node
+      - nav2_goal_reached_condition_bt_node
+      - nav2_goal_updated_condition_bt_node
+      - nav2_globally_updated_goal_condition_bt_node
+      - nav2_is_path_valid_condition_bt_node
+      - nav2_initial_pose_received_condition_bt_node
+      - nav2_reinitialize_global_localization_service_bt_node
+      - nav2_rate_controller_bt_node
+      - nav2_distance_controller_bt_node
+      - nav2_speed_controller_bt_node
+      - nav2_truncate_path_action_bt_node
+      - nav2_truncate_path_local_action_bt_node
+      - nav2_goal_updater_node_bt_node
+      - nav2_recovery_node_bt_node
+      - nav2_pipeline_sequence_bt_node
+      - nav2_round_robin_node_bt_node
+      - nav2_transform_available_condition_bt_node
+      - nav2_time_expired_condition_bt_node
+      - nav2_path_expiring_timer_condition
+      - nav2_distance_traveled_condition_bt_node
+      - nav2_single_trigger_bt_node
+      - nav2_goal_updated_controller_bt_node
+      - nav2_is_battery_low_condition_bt_node
+      - nav2_navigate_through_poses_action_bt_node
+      - nav2_navigate_to_pose_action_bt_node
+      - nav2_remove_passed_goals_action_bt_node
+      - nav2_planner_selector_bt_node
+      - nav2_controller_selector_bt_node
+      - nav2_goal_checker_selector_bt_node
+      - nav2_controller_cancel_bt_node
+      - nav2_path_longer_on_approach_bt_node
+      - nav2_wait_cancel_bt_node
+      - nav2_spin_cancel_bt_node
+      - nav2_back_up_cancel_bt_node
+      - nav2_assisted_teleop_cancel_bt_node
+      - nav2_drive_on_heading_cancel_bt_node
+      - nav2_is_battery_charging_condition_bt_node
+
+bt_navigator_navigate_through_poses_rclcpp_node:
+  ros__parameters:
+    use_sim_time: False  # 実機固有
+
+bt_navigator_navigate_to_pose_rclcpp_node:
+  ros__parameters:
+    use_sim_time: False  # 実機固有
+
+
+# ----------------------------------------------------------------------------
+# controller_server: 局所制御(速度指令の計算)ノード
+# ----------------------------------------------------------------------------
+# 役割: 「今、車輪をどのくらいの速度で動かすべきか」を毎周期計算し、
+#       /cmd_vel_nav に出力する、ナビゲーションの中で最も頻繁に動く部分。
+#       このプロジェクトの一連の不具合調査は、ほぼ全てこのノードの中身
+#       (特にFollowPath)を巡るものだった。
+controller_server:
+  ros__parameters:
+    use_sim_time: False  # 実機固有
+    controller_frequency: 20.0   # 局所制御を1秒間に何回計算するか(Hz)
+    min_x_velocity_threshold: 0.001   # これ未満の速度は「静止」扱い
+    min_y_velocity_threshold: 0.5
+    min_theta_velocity_threshold: 0.001
+    failure_tolerance: 0.3
+    progress_checker_plugin: "progress_checker"
+    goal_checker_plugins: ["general_goal_checker"] # "precise_goal_checker"
+    controller_plugins: ["FollowPath"]
+
+    # --- progress_checker: 「進捗が止まっていないか」の監視員 -----------
+    # required_movement_radius 以上、movement_time_allowance 秒以内に
+    # 位置が動かないと「進捗なし」と判断し、follow_pathアクションを中断させる。
+    # 注意: movement_time_allowance=10.0(公式デフォルト)は、回転のみのフェーズで
+    # 位置がほとんど動かないため簡単にタイムアウトし、その後リカバリーが
+    # 毎秒失敗を繰り返すだけになる既知の不具合を踏むことを2026-08-06に実機で
+    # 再確認済み。120.0に戻して回避する。
+    progress_checker:
+      plugin: "nav2_controller::SimpleProgressChecker"
+      required_movement_radius: 0.5
+      movement_time_allowance: 120.0
+
+    # --- goal_checker: 「目標に到達したか」の判定員 ----------------------
+    # xy_goal_tolerance/yaw_goal_toleranceの両方を満たすと「到達」と判定。
+    # stateful: True の場合、一度xy側の条件を満たすとその判定を保持し続け、
+    # (多少位置がズレても)以後はyaw側だけをチェックするようになる。
+    #precise_goal_checker:
+    #  plugin: "nav2_controller::SimpleGoalChecker"
+    #  xy_goal_tolerance: 0.25
+    #  yaw_goal_tolerance: 0.25
+    #  stateful: True
+    general_goal_checker:
+      stateful: True
+      plugin: "nav2_controller::SimpleGoalChecker"
+      xy_goal_tolerance: 0.25   # 目標(x,y)からこの距離以内なら位置OK [m]
+      yaw_goal_tolerance: 0.25  # 目標yawからこの角度以内なら姿勢OK [rad]
+
+    # --- FollowPath: 実際に速度指令を計算するプラグイン本体 --------------
+    # 現在の実装は DWB(Dynamic Window Approach)。
+    # 「実現可能な速度の組み合わせを多数生成し、複数の評価項目(クリティック)の
+    #   重み付き合計が最良のものを選ぶ」という方式。
+    # (公式デフォルトのまま。max_vel_x/max_vel_thetaはTurtleBot3
+    # シミュレーション向けの値なので、この実機での実測に基づき別途調整が必要)
+    FollowPath:
+      plugin: "dwb_core::DWBLocalPlanner"
+      debug_trajectory_details: True   # 各候補軌道の評価内訳をpublishする(デバッグ用)
+      min_vel_x: 0.0
+      min_vel_y: 0.0
+      max_vel_x: 0.26      # 前進速度の上限 [m/s] ※TurtleBot3の値。実機は要調整
+      max_vel_y: 0.0        # 横移動なし(差動駆動のため)
+      max_vel_theta: 0.3    # 回転速度の上限 [rad/s]
+      min_speed_xy: 0.0
+      max_speed_xy: 0.26
+      min_speed_theta: 0.0
+      # Add high threshold velocity for turtlebot 3 issue.
+      # https://github.com/ROBOTIS-GIT/turtlebot3_simulations/issues/75
+      acc_lim_x: 2.5         # 前進方向の加速度上限 [m/s^2]
+      acc_lim_y: 0.0
+      acc_lim_theta: 3.2     # 回転方向の加速度上限 [rad/s^2]
+      decel_lim_x: -2.5
+      decel_lim_y: 0.0
+      decel_lim_theta: -3.2
+      vx_samples: 20         # 前進速度方向に何通りサンプリングするか
+      vy_samples: 5
+      vtheta_samples: 20     # 回転速度方向に何通りサンプリングするか
+      sim_time: 1.7          # 各候補を何秒先まで仮想的にシミュレーションするか
+      linear_granularity: 0.05
+      angular_granularity: 0.025
+      transform_tolerance: 0.2   # TFの許容遅延[秒]。これを超えると古いTFとみなし失敗させる
+      xy_goal_tolerance: 0.25    # RotateToGoalクリティックが「回転優先モード」に入るしきい値
+      trans_stopped_velocity: 0.25  # この並進速度以下を「停止」とみなす
+      short_circuit_trajectory_evaluation: True  # 無効な軌道が見つかり次第、評価を打ち切って高速化
+      stateful: True
+      # critics: 使用する評価項目(クリティック)の一覧。
+      #   RotateToGoal : ゴール付近で、姿勢合わせ(回転)を優先させる
+      #   Oscillation  : 前後・左右・回転の指令符号が短時間で反転する「振動」を抑制
+      #   BaseObstacle : 障害物への接近を減点
+      #   GoalAlign    : 経路の最終方向に、早い段階から向きを合わせようとする
+      #   PathAlign    : 経路の接線方向に、向きを合わせようとする
+      #   PathDist     : 経路からの逸脱を減点
+      #   GoalDist     : ゴールまでの距離を減点(近いほど高評価)
+      critics: ["RotateToGoal", "Oscillation", "BaseObstacle", "GoalAlign", "PathAlign", "PathDist", "GoalDist"]
+      BaseObstacle.scale: 0.02
+      PathAlign.scale: 32.0
+      PathAlign.forward_point_distance: 0.1
+      GoalAlign.scale: 24.0
+      GoalAlign.forward_point_distance: 0.1
+      PathDist.scale: 32.0
+      GoalDist.scale: 24.0
+      RotateToGoal.scale: 32.0        # 他のクリティックとの重み付けバランスが重要
+      RotateToGoal.slowing_factor: 5.0  # ゴール付近での減速の強さ
+      RotateToGoal.lookahead_time: -1.0  # -1.0 = 軌道の最終姿勢をそのまま評価に使う
+
+
+# ----------------------------------------------------------------------------
+# local_costmap: ロボット周辺の「今すぐの」障害物マップ
+# ----------------------------------------------------------------------------
+# 役割: controller_server(局所制御)が参照する、ロボット中心の小さい
+#       (この設定では3m四方)ローリングウィンドウ形式のコストマップ。
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      update_frequency: 5.0
+      publish_frequency: 2.0
+      global_frame: odom     # ローカルコストマップの基準フレームは"odom"(ドリフトはするが連続的)
+      robot_base_frame: imu  # 実機固有
+      use_sim_time: False  # 実機固有
+      rolling_window: true    # ロボットの移動に合わせてウィンドウごと動く
+      width: 3                # コストマップの一辺の長さ[m]
+      height: 3
+      resolution: 0.05        # 1マスあたりの大きさ[m]
+      robot_radius: 0.15  # 実機固有(実測値) ロボットを円形とみなしたときの半径
+      plugins: ["voxel_layer", "inflation_layer"]
+      inflation_layer:
+        # 障害物の周りにコストの「なだらかな坂」を作るレイヤー。
+        # 経路計画・制御が、壁ギリギリより少し余裕を持ったルートを選ぶようにする。
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 3.0   # 大きいほどコストの坂が急(=狭い範囲だけ高コスト)
+        inflation_radius: 0.02     # 障害物から何mまでコストを広げるか
+      voxel_layer:
+        # LiDARの生データからリアルタイムに障害物を検出するレイヤー(3次元のボクセル管理)。
+        plugin: "nav2_costmap_2d::VoxelLayer"
+        enabled: False   # 現在は無効化(衝突リスクを考慮しない方針のため)
+        publish_voxel_map: True
+        origin_z: 0.0
+        z_resolution: 0.05
+        z_voxels: 16
+        max_obstacle_height: 2.0
+        mark_threshold: 0
+        observation_sources: scan
+        scan:  # 実機固有(Livox MID360, PointCloud2)
+          topic: /livox/lidar
+          max_obstacle_height: 2.0
+          min_obstacle_height: 0.2   # これより低い点(床など)は障害物とみなさない
+          clearing: True    # このセンサでレイキャストして自由空間もクリアする
+          marking: True     # このセンサで障害物をマークする
+          data_type: "PointCloud2"
+          raytrace_max_range: 3.0
+          raytrace_min_range: 0.0
+          obstacle_max_range: 2.5
+          obstacle_min_range: 0.5
+      static_layer:
+        # あらかじめ作成した地図(.pgm/.yaml)をそのままコストマップに反映するレイヤー。
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_subscribe_transient_local: True
+      always_send_full_costmap: True
+
+
+# ----------------------------------------------------------------------------
+# global_costmap: 地図全体スケールの障害物マップ
+# ----------------------------------------------------------------------------
+# 役割: planner_server(大域経路計画)が参照する、地図全体をカバーするコストマップ。
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      update_frequency: 1.0
+      publish_frequency: 1.0
+      global_frame: map     # グローバルコストマップの基準フレームは"map"(ドリフトなし)
+      robot_base_frame: imu  # 実機固有
+      use_sim_time: False  # 実機固有
+      robot_radius: 0.15  # 実機固有(実測値)
+      resolution: 0.05
+      track_unknown_space: true   # 未観測の領域を「不明」として区別する
+      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: False   # 現在は無効化(衝突リスクを考慮しない方針のため)
+        max_obstacle_height: 2.0
+        min_obstacle_height: 0.2
+        observation_sources: scan
+        scan:  # 実機固有(Livox MID360, PointCloud2)
+          topic: /livox/lidar
+          clearing: True
+          marking: True
+          data_type: "PointCloud2"
+          raytrace_max_range: 3.0
+          raytrace_min_range: 0.0
+          obstacle_max_range: 2.5
+          obstacle_min_range: 0.5
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_subscribe_transient_local: True
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 3.0
+        inflation_radius: 0.02
+      always_send_full_costmap: True
+
+
+# ----------------------------------------------------------------------------
+# map_server / map_saver: 地図の読み込み・保存
+# ----------------------------------------------------------------------------
+map_server:
+  ros__parameters:
+    use_sim_time: False  # 実機固有
+    # bringup_launch.py の "map" 引数で上書きされる
+    yaml_filename: ""
+
+map_saver:
+  ros__parameters:
+    use_sim_time: False  # 実機固有
+    save_map_timeout: 5.0
+    free_thresh_default: 0.25
+    occupied_thresh_default: 0.65
+    map_subscribe_transient_local: True
+
+
+# ----------------------------------------------------------------------------
+# planner_server: 大域経路計画ノード
+# ----------------------------------------------------------------------------
+# 役割: global_costmapをもとに、現在地からゴールまでの「大まかな経路」を1本計算する。
+#       ここで計算された経路(/plan)を、controller_serverが逐次追従する。
+planner_server:
+  ros__parameters:
+    expected_planner_frequency: 20.0
+    use_sim_time: False  # 実機固有
+    planner_plugins: ["GridBased"]
+    GridBased:
+      plugin: "nav2_navfn_planner/NavfnPlanner"  # グリッドベースの最短経路探索(Dijkstra系)
+      tolerance: 0.5      # 正確なゴール地点に到達できない場合、この範囲内の代替地点を探す
+      use_astar: false    # falseならDijkstra、trueならA*
+      allow_unknown: true # 未観測領域を通過禁止にしない
+
+
+# ----------------------------------------------------------------------------
+# smoother_server: 経路の平滑化
+# ----------------------------------------------------------------------------
+# 役割: planner_serverが出したカクカクした経路を、なめらかな曲線に整形する
+#       (このプロジェクトではBT側で明示的には呼ばれていない可能性が高いが、設定は存在する)
+smoother_server:
+  ros__parameters:
+    use_sim_time: False  # 実機固有
+    smoother_plugins: ["simple_smoother"]
+    simple_smoother:
+      plugin: "nav2_smoother::SimpleSmoother"
+      tolerance: 1.0e-10
+      max_its: 1000
+      do_refinement: True
+
+
+# ----------------------------------------------------------------------------
+# behavior_server: リカバリー行動(その場回転・後退・待機など)
+# ----------------------------------------------------------------------------
+# 役割: bt_navigatorのBTがリカバリーを判断したときに実行される、
+#       個別の「行動」を提供するノード。
+behavior_server:
+  ros__parameters:
+    costmap_topic: local_costmap/costmap_raw
+    footprint_topic: local_costmap/published_footprint
+    cycle_frequency: 10.0
+    behavior_plugins: ["spin", "backup", "drive_on_heading", "assisted_teleop", "wait"]
+    spin:
+      plugin: "nav2_behaviors/Spin"            # その場で指定角度だけ回転する
+    backup:
+      plugin: "nav2_behaviors/BackUp"          # 指定距離だけ後退する
+    drive_on_heading:
+      plugin: "nav2_behaviors/DriveOnHeading"  # 指定方向へ直進する
+    wait:
+      plugin: "nav2_behaviors/Wait"            # 指定時間、何もせず待つ
+    assisted_teleop:
+      plugin: "nav2_behaviors/AssistedTeleop"  # 障害物を避けながらの半自動テレオペ
+    global_frame: odom
+    robot_base_frame: imu  # 実機固有
+    transform_tolerance: 0.1
+    use_sim_time: False  # 実機固有
+    simulate_ahead_time: 2.0
+    max_rotational_vel: 0.3   # FollowPathのmax_vel_thetaと揃えておくべき値
+    min_rotational_vel: 0.12
+    rotational_acc_lim: 3.2   # FollowPathのacc_lim_thetaと揃えておくべき値
+
+
+# ----------------------------------------------------------------------------
+# robot_state_publisher / waypoint_follower
+# ----------------------------------------------------------------------------
+robot_state_publisher:
+  ros__parameters:
+    use_sim_time: False  # 実機固有
+
+waypoint_follower:
+  # 役割: 複数のゴールを順番に回る(ウェイポイント巡回)ときに使うノード。
+  #       単発のゴール移動では直接は使われない。
+  ros__parameters:
+    use_sim_time: False  # 実機固有
+    loop_rate: 20
+    stop_on_failure: false
+    waypoint_task_executor_plugin: "wait_at_waypoint"
+    wait_at_waypoint:
+      plugin: "nav2_waypoint_follower::WaitAtWaypoint"
+      enabled: True
+      waypoint_pause_duration: 200
+
+
+# ----------------------------------------------------------------------------
+# velocity_smoother: 最終出力の速度平滑化
+# ----------------------------------------------------------------------------
+# 役割: controller_server が出した /cmd_vel_nav (生の指令) を受け取り、
+#       加減速の上限・不感帯を適用して /cmd_vel (最終指令) を出す。
+#       実際にロボットへ送られるのはこちらの出力だけ。
+#       safe_bridge.py はこの /cmd_vel を購読している。
+velocity_smoother:
+  ros__parameters:
+    use_sim_time: False  # 実機固有
+    smoothing_frequency: 20.0
+    scale_velocities: False
+    feedback: "OPEN_LOOP"   # 実速度をフィードバックせず、指令値をそのまま積分して滑らかにする方式
+    max_velocity: [0.26, 0.0, 0.3]    # [x, y, theta] の上限。FollowPathの上限と揃える
+    min_velocity: [-0.26, 0.0, -0.3]
+    max_accel: [2.5, 0.0, 3.2]
+    max_decel: [-2.5, 0.0, -3.2]
+    odom_topic: "odom"        # ← odom_tf_bridge.py が配信しているトピック
+    odom_duration: 0.1
+    # deadband_velocity: この値未満の指令はゼロとみなして無視する「不感帯」。
+    # ここが大きすぎると、局所制御が出した小さい回転指令がまるごと消える
+    # (実際にこのバグを踏んだ)。基本は[0,0,0]のままにしておくのが安全。
+    deadband_velocity: [0.0, 0.0, 0.0]
+    velocity_timeout: 1.0    # この秒数、新しい指令が来なければ速度をゼロにする(安全装置)

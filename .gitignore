@@ -1,0 +1,37 @@
+# このリポジトリは /home/ubuntu 全体ではなく、独自に書いたナビゲーション関連
+# ファイルだけを追跡する方針。まず全部を無視し(/*)、必要なパス/ファイルだけを
+# 明示的に許可(!)している。
+#
+# 意図的に含めていないもの:
+#   - ros2_ws/src/glim, glim_ext, glim_ros2, livox_ros_driver2
+#     -> それぞれ独自のupstream Gitリポジトリなので二重管理しない
+#   - map_practice/, ~/rosbags/  -> 大きなバイナリデータ
+#   - seminar/                    -> venv等を含み巨大
+#   - nav_related_files/          -> このリポジトリから生成される複製物
+#   - .claude/                    -> Claude Codeのセッション状態(別途管理)
+
+/*
+
+# --- ros2_ws/src/my_robot_nav/ だけを許可 ---
+!/ros2_ws/
+/ros2_ws/*
+!/ros2_ws/src/
+/ros2_ws/src/*
+!/ros2_ws/src/my_robot_nav/
+# バックアップ・キャッシュ・他アプリの生成物は除外
+/ros2_ws/src/my_robot_nav/**/*.bak
+/ros2_ws/src/my_robot_nav/**/__pycache__/
+/ros2_ws/src/my_robot_nav/**/imgui.ini
+
+# --- RViz設定 ---
+!/my_nav_config_rviz/
+
+# --- トップレベルの独自スクリプト ---
+!/start_nav.sh
+!/bringup_launch.py
+!/safe_bridge.py
+!/odom_tf_bridge.py
+!/log_nav_topics.py
+!/nav2_param_learn.yaml
+!/CLAUDE.md
+!/.gitignore
