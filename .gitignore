@@ -37,4 +37,5 @@
 !/velocity_sweep_test.py
 !/nav2_param_learn.yaml
 !/CLAUDE.md
+!/README.md
 !/.gitignore
