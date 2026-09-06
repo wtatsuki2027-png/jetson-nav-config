@@ -22,6 +22,7 @@ pkill -f static_transform_publisher 2>/dev/null
 pkill -f glim_rosnode 2>/dev/null
 pkill -f rviz_MID360_launch 2>/dev/null
 pkill -f bringup_launch.py 2>/dev/null
+pkill -f nav_logs/nav_logger.py 2>/dev/null
 sleep 1
 
 # このスクリプトが起動した全バックグラウンドジョブを、
@@ -60,6 +61,10 @@ if [ -n "$MAP_YAML" ]; then
 else
     ros2 launch ~/bringup_launch.py &
 fi
+sleep 2
+
+echo "=== 座標・速度ログ (nav_logger.py) 起動 ==="
+python3 ~/nav_logs/nav_logger.py &
 
 echo
 echo "=== 全プロセス起動完了。停止するには Ctrl+C を押してください ==="

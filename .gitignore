@@ -26,12 +26,17 @@
 # --- RViz設定 ---
 !/my_nav_config_rviz/
 
+# --- ナビゲーション記録スクリプト(log_nav_topics.pyの後継) ---
+# スクリプトのみ許可。data/以下(実行ごとの記録結果)は追跡しない。
+!/nav_logs/
+/nav_logs/*
+!/nav_logs/nav_logger.py
+
 # --- トップレベルの独自スクリプト ---
 !/start_nav.sh
 !/bringup_launch.py
 !/safe_bridge.py
 !/odom_tf_bridge.py
-!/log_nav_topics.py
 !/evaluation_logger.py
 !/navigate_then_spin.py
 !/velocity_sweep_test.py

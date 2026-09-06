@@ -13,7 +13,7 @@ GLIM（LiDAR-IMU SLAM）とNav2を組み合わせた自律走行ロボットの�
 | `ros2_ws/src/my_robot_nav/launch/bringup_launch.py` | `bringup_launch.py`と同名の別ファイル。用途は要確認（本来使っているのはトップレベルの方） |
 | `safe_bridge.py` | `/cmd_vel`を購読し、独自バイナリ形式に変換してTCPでrobot09（モータ制御機）へ送信する |
 | `odom_tf_bridge.py` | 【自作】GLIMが配信しない「速度（特に角速度）」を、TFの差分から計算して`/odom`として配信する。Nav2の速度フィードバック欠落バグを解消するために作成 |
-| `log_nav_topics.py` | ナビゲーション中の`/goal_pose`・`/cmd_vel(_nav)`・`/odom`・現在姿勢をCSVに記録する診断ツール |
+| `nav_logs/nav_logger.py` | ナビゲーション中の座標・姿勢（`pose.csv`）と速度（`velocity.csv`）をCSVに記録する診断ツール。実行ごとに`nav_logs/data/<日時>/`へ保存する。`log_nav_topics.py`の後継 |
 | `evaluation_logger.py` | DWBの`/evaluation`（各候補軌道のクリティック別スコア内訳）を記録する診断ツール |
 | `navigate_then_spin.py` | 並進フェーズと回転フェーズを構造的に分離するオーケストレータ（位置合わせ後にSpinビヘイビアで姿勢合わせ） |
 | `velocity_sweep_test.py` | 角速度を段階的に変えて`/cmd_vel`に直接送り、指令値と実測値のズレ（不感帯・モータ特性）を調べる掃引テスト |
