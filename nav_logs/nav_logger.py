@@ -124,7 +124,7 @@ class NavLogger(Node):
 
     def pose_cb(self):
         try:
-            tf = self.tf_buffer.lookup_transform('map', 'imu', rclpy.time.Time())
+            tf = self.tf_buffer.lookup_transform('map', 'base_link', rclpy.time.Time())
             yaw = quat_to_yaw(tf.transform.rotation)
             x, y = tf.transform.translation.x, tf.transform.translation.y
             self.last_robot_pose = (x, y, yaw)

@@ -16,7 +16,11 @@ import tf2_ros
 import math
 
 ODOM_FRAME = "odom"
-BASE_FRAME = "imu"
+# 実測(2026-09-06): センサー(imu)は左右車輪の回転中心より前方7cm。
+# base_linkは、その回転中心に静的TF(imu->base_link, x=-0.07)で定義している
+# (start_nav.sh参照)。imuのままだと、その場回転のたびに位置が7cm円を描き、
+# xy_goal_toleranceの境界を出入りしてDWBが振動する原因になっていた。
+BASE_FRAME = "base_link"
 PUBLISH_RATE_HZ = 30.0
 
 

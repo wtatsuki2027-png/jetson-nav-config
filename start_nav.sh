@@ -53,6 +53,14 @@ python3 ~/odom_tf_bridge.py &
 echo "=== 静的TF 起動 ==="
 ros2 run tf2_ros static_transform_publisher --x 0 --y 0 --z 0 --yaw 0 --pitch 0 --roll 0 \
   --frame-id lidar --child-frame-id livox_frame &
+# imu(センサー実測位置)から見て、左右車輪の回転中心(base_link)は後方7cm・下方83cm
+# (実測: センサーは回転中心より前方+7cm/左右0cm/高さ+83cmに位置)。水平方向の差を
+# 無視すると、その場回転のたびにNav2が見る自己位置が7cm円を描いてしまい、
+# xy_goal_toleranceの境界を出入りしてDWBの判断が振動する原因になっていた
+# (2026-09-06に特定)。高さ(z)のズレは水平位置には影響しないが、TFとして正しい
+# 値を入れておく。
+ros2 run tf2_ros static_transform_publisher --x -0.07 --y 0 --z -0.83 --yaw 0 --pitch 0 --roll 0 \
+  --frame-id imu --child-frame-id base_link &
 sleep 2
 
 echo "=== Nav2 起動 ==="

@@ -51,7 +51,7 @@ bt_navigator:
   ros__parameters:
     use_sim_time: False  # 実機固有
     global_frame: map
-    robot_base_frame: imu  # 実機固有
+    robot_base_frame: base_link  # 実機固有(2026-09-06: imuから回転中心base_linkに変更、振動バグ対策)
     odom_topic: /odom
     bt_loop_duration: 10
     default_server_timeout: 20
@@ -199,7 +199,7 @@ local_costmap:
       update_frequency: 5.0
       publish_frequency: 2.0
       global_frame: odom
-      robot_base_frame: imu  # 実機固有
+      robot_base_frame: base_link  # 実機固有(2026-09-06: imuから回転中心base_linkに変更、振動バグ対策)
       use_sim_time: False  # 実機固有
       rolling_window: true
       width: 3
@@ -243,7 +243,7 @@ global_costmap:
       update_frequency: 1.0
       publish_frequency: 1.0
       global_frame: map
-      robot_base_frame: imu  # 実機固有
+      robot_base_frame: base_link  # 実機固有(2026-09-06: imuから回転中心base_linkに変更、振動バグ対策)
       use_sim_time: False  # 実機固有
       robot_radius: 0.15  # 実機固有(実測値)
       resolution: 0.05
@@ -325,7 +325,7 @@ behavior_server:
     assisted_teleop:
       plugin: "nav2_behaviors/AssistedTeleop"
     global_frame: odom
-    robot_base_frame: imu  # 実機固有
+    robot_base_frame: base_link  # 実機固有(2026-09-06: imuから回転中心base_linkに変更、振動バグ対策)
     transform_tolerance: 0.1
     use_sim_time: False  # 実機固有
     simulate_ahead_time: 2.0
